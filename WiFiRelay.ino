@@ -1,11 +1,17 @@
 #include <PubSubClient.h>
-#include <ESP8266WiFi.h>
-#include <ESP8266mDNS.h>
-#include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 #include <EEPROM.h>
 
 const int relayPin = 2;
+const int buttonPin = 3;
+
+boolean but_flag = false;
+boolean but;
+
+boolean curStatus = 0;
+
+const long intervalMqttSetup = 300000;
+unsigned long previousMqttSetupMillis = 0;
 
 const char* publishTopic = "/hall/light/status";
 const char* subscribeTopic = "/hall/light/changestatus";
@@ -26,37 +32,39 @@ void mqtt_callback(char* topic, byte* payload, unsigned int len)
   String tmp=topic;
   if(tmp.indexOf(subscribeTopic)>=0)
   {
-    setRelayStatus((char)payload[0]);
+    changeRelayStatus();
   }
 }
 
-void setRelayStatus(char relayStatus)
+void changeRelayStatus()
 {
-  if (relayStatus != '0' && relayStatus != '1')
-  {
-    return;
-  }
+  curStatus = !curStatus;
 
-  if (relayStatus == '0')
-  {
-    digitalWrite(relayPin, LOW);
-  }
-  else
+  setRelayStatus();
+}
+
+void setRelayStatus()
+{
+  if (curStatus)
   {
     digitalWrite(relayPin, HIGH);
   }
+  else
+  {
+    digitalWrite(relayPin, LOW);
+  }
   
   EEPROM.begin(1);
-  char eeprom;
+  boolean eeprom;
   EEPROM.get(0, eeprom);
   
-  if (relayStatus != eeprom)
+  if (curStatus != eeprom)
   {  
-    EEPROM.put(0, relayStatus);
+    EEPROM.put(0, curStatus);
     EEPROM.commit();
   }
   
-  mqtt_client.publish(publishTopic, String(relayStatus).c_str(), true);
+  mqtt_client.publish(publishTopic, String(curStatus).c_str(), true);
 }
 
 void mqtt_setup() {
@@ -67,17 +75,21 @@ void mqtt_setup() {
 
     mqtt_client.connect(clientName, mqtt_user, mqtt_password);
     mqtt_client.subscribe(subscribeTopic);
-        
-    char relayStatus;
-    EEPROM.begin(1);
-    EEPROM.get(0, relayStatus);
-    setRelayStatus(relayStatus);
-  }
+    
+    mqtt_client.publish(publishTopic, String(curStatus).c_str(), true);
+    }
 }
 
 void setup() {
   Serial.begin(115200);
   pinMode(relayPin, OUTPUT);
+  pinMode(buttonPin, INPUT_PULLUP);
+  
+  EEPROM.begin(1);
+  EEPROM.get(0, curStatus);
+
+  setRelayStatus();
+  
   WiFi.begin(wifi_ssid, wifi_password);
   
   while (WiFi.status() != WL_CONNECTED) {
@@ -90,14 +102,34 @@ void setup() {
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
 
+  mqtt_setup();
+
   ArduinoOTA.setHostname(clientName);
   ArduinoOTA.begin();
 }
 
 void loop() {
-  mqtt_setup();
+  if(millis() - previousMqttSetupMillis >= intervalMqttSetup)
+  {
+    mqtt_setup();
+    previousMqttSetupMillis = millis();
+  }
 
   ArduinoOTA.handle();
 
   mqtt_client.loop();
+
+  but = !digitalRead(buttonPin);
+  if(but == 1 && but_flag == 0)
+  {
+    but_flag = 1;
+    changeRelayStatus();
+
+    delay(500);
+    
+  }
+  if(but == 0 && but_flag == 1)
+  {
+    but_flag = 0;
+  }
 }
