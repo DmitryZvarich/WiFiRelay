@@ -1,31 +1,38 @@
 #include <PubSubClient.h>
 #include <ArduinoOTA.h>
 #include <EEPROM.h>
+#include <OneButton.h>
 
 const int relayPin = 2;
 const int buttonPin = 3;
-
-boolean but_flag = false;
-boolean but;
 
 boolean curStatus = 0;
 
 const long intervalMqttSetup = 300000;
 unsigned long previousMqttSetupMillis = 0;
 
+
+/*
+const char* publishTopic = "/kitchen/light/status";
+const char* subscribeTopic = "/kitchen/light/changestatus";
+const char* clientName = "esp8266-kitchen-light";
+*/
+/*
 const char* publishTopic = "/hall/light/status";
 const char* subscribeTopic = "/hall/light/changestatus";
 const char* clientName = "esp8266-hall-light";
+*/
 
-/*
 //washing machine
 const char* publishTopic = "/bathroom/washingmachine/status";
 const char* subscribeTopic = "/bathroom/washingmachine/changestatus";
 const char* clientName = "esp8266-washing-machine";
-*/
+
 
 WiFiClient wifiClient;
 PubSubClient mqtt_client;
+
+OneButton btn (buttonPin, true, true);
 
 void mqtt_callback(char* topic, byte* payload, unsigned int len) 
 {
@@ -81,6 +88,7 @@ void mqtt_setup() {
 }
 
 void setup() {
+  setRelayStatus();
   Serial.begin(115200);
   pinMode(relayPin, OUTPUT);
   pinMode(buttonPin, INPUT_PULLUP);
@@ -89,6 +97,8 @@ void setup() {
   EEPROM.get(0, curStatus);
 
   setRelayStatus();
+
+  btn.attachClick(changeRelayStatus);
   
   WiFi.begin(wifi_ssid, wifi_password);
   
@@ -119,17 +129,5 @@ void loop() {
 
   mqtt_client.loop();
 
-  but = !digitalRead(buttonPin);
-  if(but == 1 && but_flag == 0)
-  {
-    but_flag = 1;
-    changeRelayStatus();
-
-    delay(500);
-    
-  }
-  if(but == 0 && but_flag == 1)
-  {
-    but_flag = 0;
-  }
+  btn.tick();
 }
